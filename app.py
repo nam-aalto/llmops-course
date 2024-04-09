@@ -11,13 +11,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ChatOpenAI Templates
-system_template = """You are a helpful assistant who is funny and easy to talk to!
+system_template = """You are a helpful assistant who always makes jokes!
 """
 
 user_template = """{input}
 Think through your response step by step.
 """
-
 
 @cl.on_chat_start  # marks a function that will be executed at the start of a user session
 async def start_chat():
@@ -30,31 +29,33 @@ async def start_chat():
         "presence_penalty": 0,
     }
 
+    cl.user_session.set("messages", [
+        PromptMessage(
+            role="system",
+            template=system_template,
+            formatted=system_template,
+        )])
     cl.user_session.set("settings", settings)
 
 
 @cl.on_message  # marks a function that should be run each time the chatbot receives a message from a user
 async def main(message: cl.Message):
     settings = cl.user_session.get("settings")
+    messages: list[any] = cl.user_session.get("messages")
 
     client = AsyncOpenAI()
 
     print(message.content)
 
+    messages.append(PromptMessage(
+        role="user",
+        template=user_template,
+        formatted=user_template.format(input=message.content),
+    ))
+
     prompt = Prompt(
         provider=ChatOpenAI.id,
-        messages=[
-            PromptMessage(
-                role="system",
-                template=system_template,
-                formatted=system_template,
-            ),
-            PromptMessage(
-                role="user",
-                template=user_template,
-                formatted=user_template.format(input=message.content),
-            ),
-        ],
+        messages=messages,
         inputs={"input": message.content},
         settings=settings,
     )
@@ -75,6 +76,12 @@ async def main(message: cl.Message):
     # Update the prompt object with the completion
     prompt.completion = msg.content
     msg.prompt = prompt
+    messages.append(PromptMessage(
+        role="assistant",
+        formatted=msg.content
+    ))
+
+    cl.user_session.set("messages", messages)
 
     # Send and close the message stream
     await msg.send()
